@@ -13,11 +13,22 @@ class BoardRepository
              FROM boards b
              INNER JOIN workspaces w ON w.id = b.workspace_id
              WHERE b.deleted_at IS NULL
-               AND (b.visibility = \'public\'
-                    OR EXISTS (SELECT 1 FROM board_members bm WHERE bm.board_id = b.id AND bm.user_id = :uid))
+               AND (
+                   -- Membro direto do board (qualquer visibilidade)
+                   EXISTS (SELECT 1 FROM board_members bm WHERE bm.board_id = b.id AND bm.user_id = :uid1)
+                   OR (
+                       -- Board público: só visível para membros do workspace
+                       b.visibility = \'public\'
+                       AND EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id = b.workspace_id AND wm.user_id = :uid2)
+                   )
+                   OR (
+                       -- Criador do board sempre vê
+                       b.created_by = :uid3
+                   )
+               )
              ORDER BY w.name, b.order_index, b.name'
         );
-        $stmt->execute([':uid' => $userId]);
+        $stmt->execute([':uid1' => $userId, ':uid2' => $userId, ':uid3' => $userId]);
         return $stmt->fetchAll();
     }
 
@@ -41,6 +52,15 @@ class BoardRepository
         $stmt->execute([':bid' => $boardId, ':uid' => $userId]);
         $row = $stmt->fetch();
         return $row ? $row['role'] : false;
+    }
+
+    public function isWorkspaceMember(int $workspaceId, int $userId): bool
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT 1 FROM workspace_members WHERE workspace_id = :wid AND user_id = :uid LIMIT 1'
+        );
+        $stmt->execute([':wid' => $workspaceId, ':uid' => $userId]);
+        return (bool)$stmt->fetchColumn();
     }
 
     public function getColumns(int $boardId): array

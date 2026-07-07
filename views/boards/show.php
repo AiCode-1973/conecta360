@@ -11,9 +11,17 @@ $itemRepo   = new ItemRepository(pdo_master());
 $board = $boardRepo->findById($boardId);
 if (!$board) { http_response_code(404); require BASE_PATH . '/views/errors/404.php'; exit; }
 
-// Permissão: board público ou membro
-$userRole = $boardRepo->getMemberRole($boardId, (int)$_SESSION['user_id']);
-if ($board['visibility'] !== 'public' && !$userRole) {
+$userId   = (int)$_SESSION['user_id'];
+$userRole = $boardRepo->getMemberRole($boardId, $userId);
+$isCreator = (int)$board['created_by'] === $userId;
+$isMemberOfWorkspace = $boardRepo->isWorkspaceMember((int)$board['workspace_id'], $userId);
+
+// Permissão: precisa ser membro do board, criador, ou membro do workspace (para boards públicos)
+$canAccess = $userRole
+    || $isCreator
+    || ($board['visibility'] === 'public' && $isMemberOfWorkspace);
+
+if (!$canAccess) {
     flash_set('error', 'Sem permissão para acessar este board.');
     redirect('/boards');
 }
