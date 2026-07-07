@@ -23,9 +23,11 @@ $uri    = strtok($_SERVER['REQUEST_URI'], '?');
 $uri    = '/' . trim(parse_url($uri, PHP_URL_PATH), '/');
 $method = strtoupper($_SERVER['REQUEST_METHOD']);
 
-// Remove prefixo de subpasta (quando rodando em /conecta360/public)
+// Remove prefixo de subpasta apenas em ambiente local (ex: /conecta360/public)
+// Em produção com domínio próprio o SCRIPT_NAME será /public/index.php ou /index.php
+// e o REQUEST_URI nunca começa com /public
 $basePath = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/');
-if ($basePath !== '' && str_starts_with($uri, $basePath)) {
+if ($basePath !== '' && $basePath !== '/public' && str_starts_with($uri, $basePath)) {
     $uri = substr($uri, strlen($basePath));
 }
 $uri = $uri === '' ? '/' : $uri;

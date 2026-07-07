@@ -1,0 +1,22 @@
+Options -Indexes
+RewriteEngine On
+
+# ── Força HTTPS ───────────────────────────────────────────────────────────────
+RewriteCond %{HTTPS} off
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
+# ── Bloqueia acesso às pastas internas do projeto ─────────────────────────────
+RewriteRule ^(bootstrap|config|database|src|views|routes|modules|middleware)(/|$) - [F,L]
+
+# ── Bloqueia arquivos sensíveis ───────────────────────────────────────────────
+<FilesMatch "\.(env|sql|log|sh|bak|lock)$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# ── Se o arquivo existe fisicamente dentro de public/, serve diretamente ──────
+RewriteCond %{DOCUMENT_ROOT}/public%{REQUEST_URI} -f
+RewriteRule ^(.*)$ public/$1 [L]
+
+# ── Tudo o mais vai para o front controller ───────────────────────────────────
+RewriteRule ^ public/index.php [QSA,L]
