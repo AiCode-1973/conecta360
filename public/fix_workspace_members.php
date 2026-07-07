@@ -1,4 +1,34 @@
 <?php
+/**
+ * Migração: adiciona membros aos workspaces existentes
+ * Acesse: https://conecta360.aicode.dev.br/fix_workspace_members.php?token=c360fix2026
+ * DELETE após usar!
+ */
+declare(strict_types=1);
+
+if (($_GET['token'] ?? '') !== 'c360fix2026') {
+    http_response_code(403); die('Proibido.');
+}
+
+$base = dirname(__DIR__);
+require_once $base . '/config/app.php';
+
+$pdo = pdo_master();
+$log = [];
+
+// 1. Atualiza os arquivos PHP no servidor (patch do routes/web.php e BoardRepository)
+// ─── Patch BoardRepository: adicionar allWorkspacesByUser, getWorkspaceMembers, etc. ───
+$repoPath = $base . '/src/Modules/Board/BoardRepository.php';
+$repoContent = file_get_contents($repoPath);
+
+$needsUpdate = !str_contains($repoContent, 'allWorkspacesByUser')
+            || !str_contains($repoContent, 'getWorkspaceMembers')
+            || !str_contains($repoContent, 'removeWorkspaceMember')
+            || !str_contains($repoContent, 'getWorkspaceById');
+
+if ($needsUpdate) {
+    $newRepo = <<<'PHPEOF'
+<?php
 declare(strict_types=1);
 
 class BoardRepository
@@ -14,17 +44,12 @@ class BoardRepository
              INNER JOIN workspaces w ON w.id = b.workspace_id
              WHERE b.deleted_at IS NULL
                AND (
-                   -- Membro direto do board (qualquer visibilidade)
                    EXISTS (SELECT 1 FROM board_members bm WHERE bm.board_id = b.id AND bm.user_id = :uid1)
                    OR (
-                       -- Board público: só visível para membros do workspace
                        b.visibility = \'public\'
                        AND EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id = b.workspace_id AND wm.user_id = :uid2)
                    )
-                   OR (
-                       -- Criador do board sempre vê
-                       b.created_by = :uid3
-                   )
+                   OR (b.created_by = :uid3)
                )
              ORDER BY w.name, b.order_index, b.name'
         );
@@ -68,7 +93,7 @@ class BoardRepository
         $stmt = $this->pdo->prepare(
             'SELECT * FROM board_columns WHERE board_id = :id ORDER BY order_index, id'
         );
-        $stmt->execute([':id' => $boardId]);
+        $stmt->execute([':id' => $id]);
         return $stmt->fetchAll();
     }
 
@@ -196,3 +221,93 @@ class BoardRepository
         $this->pdo->prepare('UPDATE boards SET deleted_at = NOW() WHERE id = ?')->execute([$id]);
     }
 }
+PHPEOF;
+
+    // Fix: getColumns usa $boardId, não $id
+    $newRepo = str_replace(
+        "SELECT * FROM board_columns WHERE board_id = :id ORDER BY order_index, id'
+        );
+        $stmt->execute([':id' => \$id]);",
+        "SELECT * FROM board_columns WHERE board_id = :id ORDER BY order_index, id'
+        );
+        \$stmt->execute([':id' => \$boardId]);",
+        $newRepo
+    );
+
+    if (file_put_contents($repoPath, $newRepo)) {
+        $log[] = '✅ BoardRepository.php atualizado com métodos de workspace';
+    } else {
+        $log[] = '❌ Falha ao escrever BoardRepository.php';
+    }
+} else {
+    $log[] = '⏭️  BoardRepository.php já estava atualizado';
+}
+
+// 2. Corrige dados existentes no banco
+// ─── Para cada workspace, adiciona o criador como owner em workspace_members ───
+try {
+    $workspaces = $pdo->query('SELECT id, name, created_by FROM workspaces WHERE deleted_at IS NULL')->fetchAll();
+    $added = 0;
+    foreach ($workspaces as $ws) {
+        $check = $pdo->prepare('SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ? LIMIT 1');
+        $check->execute([$ws['id'], $ws['created_by']]);
+        if (!$check->fetchColumn()) {
+            $pdo->prepare('INSERT IGNORE INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)')
+                ->execute([$ws['id'], $ws['created_by'], 'owner']);
+            $added++;
+            $log[] = "✅ Workspace #{$ws['id']} \"{$ws['name']}\": criador (user #{$ws['created_by']}) adicionado como owner";
+        } else {
+            $log[] = "⏭️  Workspace #{$ws['id']} \"{$ws['name']}\": criador já era membro";
+        }
+    }
+} catch (Throwable $e) {
+    $log[] = '❌ Erro ao corrigir workspace_members: ' . $e->getMessage();
+}
+
+// 3. Para cada board, adiciona criador como board_member se ainda não for
+try {
+    $boards = $pdo->query('SELECT id, name, created_by FROM boards WHERE deleted_at IS NULL')->fetchAll();
+    foreach ($boards as $b) {
+        $check = $pdo->prepare('SELECT 1 FROM board_members WHERE board_id = ? AND user_id = ? LIMIT 1');
+        $check->execute([$b['id'], $b['created_by']]);
+        if (!$check->fetchColumn()) {
+            $pdo->prepare('INSERT IGNORE INTO board_members (board_id, user_id, role) VALUES (?, ?, ?)')
+                ->execute([$b['id'], $b['created_by'], 'owner']);
+            $log[] = "✅ Board #{$b['id']} \"{$b['name']}\": criador adicionado como owner";
+        } else {
+            $log[] = "⏭️  Board #{$b['id']} \"{$b['name']}\": criador já era membro";
+        }
+    }
+} catch (Throwable $e) {
+    $log[] = '❌ Erro ao corrigir board_members: ' . $e->getMessage();
+}
+
+// 4. Verifica resultado final
+$wsMembers   = (int)$pdo->query('SELECT COUNT(*) FROM workspace_members')->fetchColumn();
+$boardMembers = (int)$pdo->query('SELECT COUNT(*) FROM board_members')->fetchColumn();
+
+?><!DOCTYPE html>
+<html lang="pt-br">
+<head><meta charset="UTF-8"><title>Fix Members — Conecta360</title>
+<style>body{font-family:monospace;background:#111;color:#eee;padding:2rem;line-height:1.9}
+h2{color:#fdab3d;margin-bottom:1rem} .ok{color:#00c875} .err{color:#e2445c} .warn{color:#fdab3d}
+.box{background:#1a1a2e;border:1px solid #333;padding:1rem 1.5rem;border-radius:8px;margin-bottom:1.5rem}
+</style></head><body>
+<h2>Conecta360 — Correção de Membros</h2>
+<div class="box">
+<?php foreach ($log as $l): ?>
+<span class="<?= str_starts_with($l,'✅') ? 'ok' : (str_starts_with($l,'❌') ? 'err' : 'warn') ?>"><?= htmlspecialchars($l) ?></span><br>
+<?php endforeach ?>
+</div>
+<div class="box">
+<strong>Estado final:</strong><br>
+<span class="ok">✅ workspace_members: <?= $wsMembers ?> registros</span><br>
+<span class="ok">✅ board_members: <?= $boardMembers ?> registros</span>
+</div>
+<div class="box">
+<strong>Próximos passos:</strong><br>
+1. <a href="/boards" style="color:#579bfc">Acesse /boards</a> — você verá o botão "Gerenciar Equipe" nos workspaces<br>
+2. Use "Gerenciar Equipe" para convidar outros usuários<br>
+3. <strong class="err">DELETE este arquivo: public/fix_workspace_members.php</strong>
+</div>
+</body></html>

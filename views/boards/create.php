@@ -2,7 +2,7 @@
 declare(strict_types=1);
 require_once BASE_PATH . '/src/Modules/Board/BoardRepository.php';
 $repo       = new BoardRepository(pdo_master());
-$workspaces = $repo->allWorkspaces();
+$workspaces = $repo->allWorkspacesByUser((int)$_SESSION['user_id']);
 $flash      = flash_get();
 $baseUrl    = rtrim(env('APP_URL', ''), '/');
 

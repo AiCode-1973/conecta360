@@ -238,15 +238,98 @@ if ($uri === '/workspaces/create' && $method === 'POST') {
     if (!csrf_verify()) { json_response(['error' => 'Token inválido'], 403); }
     $name = trim($_POST['name'] ?? '');
     if (strlen($name) < 2) { flash_set('error', 'Nome inválido.'); redirect('/boards/create'); }
-    $stmt = pdo_master()->prepare(
-        'INSERT INTO workspaces (name, created_by) VALUES (?, ?)'
-    );
-    $stmt->execute([$name, (int)$_SESSION['user_id']]);
-    $id = (int)pdo_master()->lastInsertId();
+    $currentUserId = (int)$_SESSION['user_id'];
+    $pdo = pdo_master();
+    $stmt = $pdo->prepare('INSERT INTO workspaces (name, created_by) VALUES (?, ?)');
+    $stmt->execute([$name, $currentUserId]);
+    $id = (int)$pdo->lastInsertId();
+    // Adiciona criador como owner do workspace
+    board_repo()->ensureWorkspaceMember($id, $currentUserId, 'owner');
     if (!empty($_SERVER['HTTP_X_REQUESTED_WITH'])) {
         json_response(['id' => $id, 'name' => $name]);
     }
     redirect('/boards/create');
+}
+
+// GET /workspaces/{id}/members  — lista membros (AJAX)
+if (preg_match('#^/workspaces/(\d+)/members$#', $uri, $m) && $method === 'GET') {
+    require_auth();
+    $wsId  = (int)$m[1];
+    $repo  = board_repo();
+    $ws    = $repo->getWorkspaceById($wsId);
+    if (!$ws) { json_response(['error' => 'Workspace não encontrado'], 404); }
+    // Só owner/admin do workspace ou criador pode gerenciar membros
+    $myRole = null;
+    foreach ($repo->getWorkspaceMembers($wsId) as $mem) {
+        if ((int)$mem['user_id'] === (int)$_SESSION['user_id']) { $myRole = $mem['role']; break; }
+    }
+    $isCreator = (int)$ws['created_by'] === (int)$_SESSION['user_id'];
+    if (!$isCreator && !in_array($myRole, ['owner','admin'], true)) {
+        json_response(['error' => 'Sem permissão'], 403);
+    }
+    $members = $repo->getWorkspaceMembers($wsId);
+    // Todos os usuários ativos para o select de convite
+    $allUsers = pdo_master()->query(
+        'SELECT id, name, email FROM users WHERE status = \'active\' AND deleted_at IS NULL ORDER BY name'
+    )->fetchAll();
+    json_response(['members' => $members, 'all_users' => $allUsers, 'workspace' => $ws]);
+}
+
+// POST /workspaces/{id}/members/invite  — convida usuário
+if (preg_match('#^/workspaces/(\d+)/members/invite$#', $uri, $m) && $method === 'POST') {
+    require_auth();
+    if (!csrf_verify()) { json_response(['error' => 'Token inválido'], 403); }
+    $wsId      = (int)$m[1];
+    $inviteUid = (int)($_POST['user_id'] ?? 0);
+    $role      = in_array($_POST['role'] ?? '', ['admin','member','viewer'], true) ? $_POST['role'] : 'member';
+    if (!$inviteUid) { json_response(['error' => 'user_id obrigatório'], 422); }
+    $repo = board_repo();
+    $ws   = $repo->getWorkspaceById($wsId);
+    if (!$ws) { json_response(['error' => 'Workspace não encontrado'], 404); }
+    // Verifica permissão
+    $members = $repo->getWorkspaceMembers($wsId);
+    $myRole  = null;
+    foreach ($members as $mem) {
+        if ((int)$mem['user_id'] === (int)$_SESSION['user_id']) { $myRole = $mem['role']; break; }
+    }
+    $isCreator = (int)$ws['created_by'] === (int)$_SESSION['user_id'];
+    if (!$isCreator && !in_array($myRole, ['owner','admin'], true)) {
+        json_response(['error' => 'Sem permissão para convidar'], 403);
+    }
+    $repo->ensureWorkspaceMember($wsId, $inviteUid, $role);
+    // Retorna membro recém-adicionado
+    $newMember = null;
+    foreach ($repo->getWorkspaceMembers($wsId) as $mem) {
+        if ((int)$mem['user_id'] === $inviteUid) { $newMember = $mem; break; }
+    }
+    json_response(['ok' => true, 'member' => $newMember]);
+}
+
+// POST /workspaces/{id}/members/{uid}/remove  — remove membro
+if (preg_match('#^/workspaces/(\d+)/members/(\d+)/remove$#', $uri, $m) && $method === 'POST') {
+    require_auth();
+    if (!csrf_verify()) { json_response(['error' => 'Token inválido'], 403); }
+    $wsId       = (int)$m[1];
+    $removeUid  = (int)$m[2];
+    $currentUid = (int)$_SESSION['user_id'];
+    $repo = board_repo();
+    $ws   = $repo->getWorkspaceById($wsId);
+    if (!$ws) { json_response(['error' => 'Workspace não encontrado'], 404); }
+    // Não pode remover a si mesmo se for o único owner
+    $members = $repo->getWorkspaceMembers($wsId);
+    $myRole  = null;
+    foreach ($members as $mem) {
+        if ((int)$mem['user_id'] === $currentUid) { $myRole = $mem['role']; break; }
+    }
+    $isCreator = (int)$ws['created_by'] === $currentUid;
+    if (!$isCreator && !in_array($myRole, ['owner','admin'], true)) {
+        json_response(['error' => 'Sem permissão'], 403);
+    }
+    if ($removeUid === (int)$ws['created_by']) {
+        json_response(['error' => 'Não é possível remover o criador do workspace'], 422);
+    }
+    $repo->removeWorkspaceMember($wsId, $removeUid);
+    json_response(['ok' => true]);
 }
 
 // GET /boards/{id}
