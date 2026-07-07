@@ -36,7 +36,7 @@ RewriteRule ^ - [E=SUBDOMAIN:%1,E=DOMAIN:%2]
 # Exclui arquivos e pastas físicas que realmente existem (assets, uploads)
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^ index.php [QSA,L]
+RewriteRule ^(.*)$ index.php [QSA,L]
 
 # ── Cabeçalhos de Segurança ───────────────────────────────────────────────────
 <IfModule mod_headers.c>
