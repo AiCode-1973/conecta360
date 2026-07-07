@@ -82,9 +82,11 @@ class BoardRepository
 
     public function create(array $data): int
     {
-        $maxOrder = (int)$this->pdo->prepare(
+        $maxStmt = $this->pdo->prepare(
             'SELECT COALESCE(MAX(order_index),0) FROM boards WHERE workspace_id = :wid'
-        )->execute([':wid' => $data['workspace_id']]);
+        );
+        $maxStmt->execute([':wid' => $data['workspace_id']]);
+        $maxOrder = (int)$maxStmt->fetchColumn();
 
         $stmt = $this->pdo->prepare(
             'INSERT INTO boards (workspace_id, name, description, visibility, color, icon, created_by, order_index)
@@ -101,6 +103,13 @@ class BoardRepository
             ':order_index'  => $maxOrder + 1,
         ]);
         return (int)$this->pdo->lastInsertId();
+    }
+
+    public function ensureWorkspaceMember(int $workspaceId, int $userId, string $role = 'member'): void
+    {
+        $this->pdo->prepare(
+            'INSERT IGNORE INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)'
+        )->execute([$workspaceId, $userId, $role]);
     }
 
     public function addMember(int $boardId, int $userId, string $role = 'owner'): void

@@ -194,30 +194,38 @@ if ($uri === '/boards/create' && $method === 'POST') {
     }
 
     $repo    = board_repo();
-    $boardId = $repo->create([
-        'workspace_id' => $workspaceId,
-        'name'         => $name,
-        'description'  => $description,
-        'visibility'   => $visibility,
-        'color'        => $color,
-        'icon'         => $icon,
-        'created_by'   => $_SESSION['user_id'],
-    ]);
-    $repo->addMember($boardId, $_SESSION['user_id'], 'owner');
+    try {
+        $boardId = $repo->create([
+            'workspace_id' => $workspaceId,
+            'name'         => $name,
+            'description'  => $description,
+            'visibility'   => $visibility,
+            'color'        => $color,
+            'icon'         => $icon,
+            'created_by'   => $_SESSION['user_id'],
+        ]);
+        $repo->addMember($boardId, $_SESSION['user_id'], 'owner');
+        $repo->ensureWorkspaceMember($workspaceId, $_SESSION['user_id'], 'owner');
 
-    // Colunas padrão
-    $statusOptions = json_encode(['options' => [
-        ['slug' => 'not_started', 'label' => 'Não Iniciado', 'color' => '#c4c4c4'],
-        ['slug' => 'in_progress', 'label' => 'Em Andamento', 'color' => '#fdab3d'],
-        ['slug' => 'done',        'label' => 'Concluído',    'color' => '#00c875'],
-        ['slug' => 'stuck',       'label' => 'Travado',      'color' => '#e2445c'],
-    ]]);
-    $repo->createColumn(['board_id' => $boardId, 'name' => 'Status',      'type' => 'status', 'settings' => $statusOptions]);
-    $repo->createColumn(['board_id' => $boardId, 'name' => 'Responsável', 'type' => 'person', 'settings' => '{}']);
-    $repo->createColumn(['board_id' => $boardId, 'name' => 'Data Limite', 'type' => 'date',   'settings' => '{}']);
+        // Colunas padrão
+        $statusOptions = json_encode(['options' => [
+            ['slug' => 'not_started', 'label' => 'Não Iniciado', 'color' => '#c4c4c4'],
+            ['slug' => 'in_progress', 'label' => 'Em Andamento', 'color' => '#fdab3d'],
+            ['slug' => 'done',        'label' => 'Concluído',    'color' => '#00c875'],
+            ['slug' => 'stuck',       'label' => 'Travado',      'color' => '#e2445c'],
+        ]]);
+        $repo->createColumn(['board_id' => $boardId, 'name' => 'Status',      'type' => 'status', 'settings' => $statusOptions]);
+        $repo->createColumn(['board_id' => $boardId, 'name' => 'Responsável', 'type' => 'person', 'settings' => '{}']);
+        $repo->createColumn(['board_id' => $boardId, 'name' => 'Data Limite', 'type' => 'date',   'settings' => '{}']);
 
-    // Grupo padrão
-    group_repo()->create($boardId, 'Principal');
+        // Grupo padrão
+        group_repo()->create($boardId, 'Principal');
+
+    } catch (Exception $e) {
+        error_log('[board.create] ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+        flash_set('error', APP_DEBUG ? $e->getMessage() : 'Erro ao criar board. Tente novamente.');
+        redirect('/boards/create');
+    }
 
     flash_set('success', 'Board criado com sucesso!');
     redirect('/boards/' . $boardId);
