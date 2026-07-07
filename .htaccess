@@ -9,7 +9,7 @@ RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
 RewriteRule ^(bootstrap|config|database|src|views|routes|modules|middleware)(/|$) - [F,L]
 
 # ── Bloqueia arquivos sensíveis ───────────────────────────────────────────────
-<FilesMatch "\.(env|sql|log|sh|bak|lock)$">
+<FilesMatch "\.(env|sql|log|sh|bak|lock|md)$">
     Order Allow,Deny
     Deny from all
 </FilesMatch>

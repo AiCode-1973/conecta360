@@ -1,0 +1,13 @@
+# Credenciais e segredos
+.env
+ACESSO.md
+
+# Logs
+*.log
+
+# Uploads
+public/uploads/
+
+# Cache / temporários
+*.tmp
+*.bak

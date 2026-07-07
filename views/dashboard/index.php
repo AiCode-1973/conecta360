@@ -160,27 +160,27 @@ $baseUrl   = rtrim(env('APP_URL', ''), '/');
     <nav class="sb-nav">
         <p class="nav-section">Principal</p>
         <div class="nav-item active"><a href="<?= $baseUrl ?>/dashboard">🏠&nbsp; Dashboard</a></div>
-        <div class="nav-item"><a href="#">📋&nbsp; Meus Boards</a></div>
+        <div class="nav-item"><a href="<?= $baseUrl ?>/boards">📋&nbsp; Meus Boards</a></div>
         <div class="nav-item">
-            <a href="#">✅&nbsp; Minhas Tarefas
+            <a href="<?= $baseUrl ?>/boards">✅&nbsp; Minhas Tarefas
                 <?php if ($myTasksCount > 0): ?><span class="n-badge"><?= min($myTasksCount, 99) ?></span><?php endif ?>
             </a>
         </div>
-        <div class="nav-item"><a href="#">📅&nbsp; Calendário</a></div>
+        <div class="nav-item"><a href="<?= $baseUrl ?>/boards?view=calendar">📅&nbsp; Calendário</a></div>
         <div class="nav-item">
-            <a href="#">🔔&nbsp; Notificações
+            <a href="<?= $baseUrl ?>/notifications">🔔&nbsp; Notificações
                 <?php if ($unreadNotifs > 0): ?><span class="n-badge"><?= min($unreadNotifs, 99) ?></span><?php endif ?>
             </a>
         </div>
 
         <p class="nav-section" style="margin-top:.5rem">Análises</p>
-        <div class="nav-item"><a href="#">📊&nbsp; Relatórios</a></div>
-        <div class="nav-item"><a href="#">🤖&nbsp; Automações</a></div>
+        <div class="nav-item"><a href="<?= $baseUrl ?>/reports">📊&nbsp; Relatórios</a></div>
+        <div class="nav-item"><a href="<?= $baseUrl ?>/automations">🤖&nbsp; Automações</a></div>
 
         <p class="nav-section" style="margin-top:.5rem">Administração</p>
-        <div class="nav-item"><a href="#">👥&nbsp; Usuários</a></div>
-        <div class="nav-item"><a href="#">⚙️&nbsp; Configurações</a></div>
-        <div class="nav-item"><a href="#">🛡️&nbsp; Auditoria</a></div>
+        <div class="nav-item"><a href="<?= $baseUrl ?>/users">👥&nbsp; Usuários</a></div>
+        <div class="nav-item"><a href="<?= $baseUrl ?>/settings">⚙️&nbsp; Configurações</a></div>
+        <div class="nav-item"><a href="<?= $baseUrl ?>/audit">🛡️&nbsp; Auditoria</a></div>
     </nav>
 
     <div class="sb-footer">
@@ -198,8 +198,8 @@ $baseUrl   = rtrim(env('APP_URL', ''), '/');
 <div class="main">
     <header class="topbar">
         <span class="topbar-title">Dashboard</span>
-        <a href="#" class="btn btn-outline">🔍 Buscar</a>
-        <a href="#" class="btn btn-primary">+ Novo Item</a>
+        <a href="<?= $baseUrl ?>/boards" class="btn btn-outline">📋 Boards</a>
+        <a href="<?= $baseUrl ?>/boards/create" class="btn btn-primary">+ Novo Board</a>
     </header>
 
     <div class="page">
@@ -245,21 +245,21 @@ $baseUrl   = rtrim(env('APP_URL', ''), '/');
                 <div class="card">
                     <div class="ch">
                         <h3>Meus Boards</h3>
-                        <a href="#" class="cl">Ver todos →</a>
+                        <a href="<?= $baseUrl ?>/boards" class="cl">Ver todos →</a>
                     </div>
                     <div class="cb">
                         <?php if (empty($myBoards)): ?>
-                            <div class="empty">📋 Nenhum board ainda. <a href="#" style="color:var(--primary)">Crie o primeiro!</a></div>
+                            <div class="empty">📋 Nenhum board ainda. <a href="<?= $baseUrl ?>/boards/create" style="color:var(--primary)">Crie o primeiro!</a></div>
                         <?php else: ?>
                             <div class="bg">
                                 <?php foreach ($myBoards as $b): ?>
-                                    <a href="#" class="bc">
+                                    <a href="<?= $baseUrl ?>/boards/<?= $b['id'] ?>" class="bc">
                                         <div class="bc-bar" style="background:<?= htmlspecialchars($b['color'] ?? '#0073ea') ?>"></div>
                                         <strong><?= htmlspecialchars($b['name']) ?></strong>
                                         <small><?= (int)$b['item_count'] ?> ite<?= $b['item_count'] != 1 ? 'ns' : 'm' ?></small>
                                     </a>
                                 <?php endforeach ?>
-                                <a href="#" class="bc-new">+ Novo Board</a>
+                                <a href="<?= $baseUrl ?>/boards/create" class="bc-new">+ Novo Board</a>
                             </div>
                         <?php endif ?>
                     </div>

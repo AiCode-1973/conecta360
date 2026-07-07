@@ -364,6 +364,75 @@ if (preg_match('#^/boards/(\d+)/columns/create$#', $uri, $m) && $method === 'POS
     json_response(['id' => $id, 'name' => $colName, 'type' => $colType]);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// USUÁRIOS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// GET /users
+if ($uri === '/users' && $method === 'GET') {
+    require_auth();
+    require BASE_PATH . '/views/users/index.php';
+    exit;
+}
+
+// POST /users/create
+if ($uri === '/users/create' && $method === 'POST') {
+    require_auth();
+    if (!csrf_verify()) { flash_set('error', 'Token inválido.'); redirect('/users'); }
+
+    $name   = trim($_POST['name'] ?? '');
+    $email  = strtolower(trim(filter_input(INPUT_POST, 'email', FILTER_SANITIZE_EMAIL) ?? ''));
+    $pass   = $_POST['password'] ?? '';
+    $status = in_array($_POST['status'] ?? '', ['active','invited','inactive'], true) ? $_POST['status'] : 'invited';
+
+    if (strlen($name) < 2)     { flash_set('error', 'Nome deve ter ao menos 2 caracteres.'); redirect('/users'); }
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) { flash_set('error', 'E-mail inválido.'); redirect('/users'); }
+    if (strlen($pass) < 6)     { flash_set('error', 'Senha deve ter ao menos 6 caracteres.'); redirect('/users'); }
+
+    $hash = password_hash($pass, PASSWORD_BCRYPT, ['cost' => 12]);
+    try {
+        $stmt = pdo_master()->prepare(
+            'INSERT INTO users (name, email, password, status, email_verified_at, created_at, updated_at)
+             VALUES (?, ?, ?, ?, NOW(), NOW(), NOW())'
+        );
+        $stmt->execute([$name, $email, $hash, $status]);
+        flash_set('success', "Usuário {$name} criado com sucesso.");
+    } catch (Exception $e) {
+        if (str_contains($e->getMessage(), 'Duplicate')) {
+            flash_set('error', 'E-mail já cadastrado.');
+        } else {
+            error_log('[users.create] ' . $e->getMessage());
+            flash_set('error', 'Erro ao criar usuário.');
+        }
+    }
+    redirect('/users');
+}
+
+// POST /users/{id}/toggle-status
+if (preg_match('#^/users/(\d+)/toggle-status$#', $uri, $m) && $method === 'POST') {
+    require_auth();
+    if (!csrf_verify()) { json_response(['error' => 'Token inválido'], 403); }
+    $uid = (int)$m[1];
+    if ($uid === (int)$_SESSION['user_id']) { json_response(['error' => 'Não é possível alterar seu próprio status.'], 422); }
+    $user = pdo_master()->prepare('SELECT status FROM users WHERE id = ? LIMIT 1');
+    $user->execute([$uid]);
+    $row = $user->fetch();
+    if (!$row) { json_response(['error' => 'Usuário não encontrado.'], 404); }
+    $newStatus = $row['status'] === 'active' ? 'inactive' : 'active';
+    pdo_master()->prepare('UPDATE users SET status = ?, updated_at = NOW() WHERE id = ?')->execute([$newStatus, $uid]);
+    json_response(['ok' => true, 'status' => $newStatus]);
+}
+
+// POST /users/{id}/delete
+if (preg_match('#^/users/(\d+)/delete$#', $uri, $m) && $method === 'POST') {
+    require_auth();
+    if (!csrf_verify()) { json_response(['error' => 'Token inválido'], 403); }
+    $uid = (int)$m[1];
+    if ($uid === (int)$_SESSION['user_id']) { json_response(['error' => 'Não é possível excluir seu próprio usuário.'], 422); }
+    pdo_master()->prepare('UPDATE users SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL')->execute([$uid]);
+    json_response(['ok' => true]);
+}
+
 // 404
 http_response_code(404);
 require BASE_PATH . '/views/errors/404.php';
