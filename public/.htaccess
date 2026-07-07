@@ -1,0 +1,80 @@
+# =============================================================================
+# CONECTA360 — Apache .htaccess — Front Controller + Wildcard Subdomain
+# Raiz do projeto: public_html/ ou htdocs/conecta360/public/
+# =============================================================================
+
+# ── Segurança básica ──────────────────────────────────────────────────────────
+# Oculta a versão do servidor e desabilita listagem de diretórios
+Options -Indexes -MultiViews
+ServerSignature Off
+
+# Bloqueia acesso direto a arquivos sensíveis
+<FilesMatch "\.(env|sql|log|sh|bak|git|json|lock|md)$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# Bloqueia acesso às pastas internas
+RewriteRule ^(bootstrap|core|database|modules|middleware|helpers|services|config)(/|$) - [F,L]
+
+# ── Rewrite Engine ────────────────────────────────────────────────────────────
+RewriteEngine On
+
+# Força HTTPS em produção (descomente quando o SSL estiver configurado)
+# RewriteCond %{HTTPS} off
+# RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
+# ── Captura do Subdomínio ─────────────────────────────────────────────────────
+# Extrai o primeiro segmento do host e injeta como variável de ambiente
+# Exemplo: hcor.conecta360.com.br → SUBDOMAIN=hcor
+# O PHP lê via apache_request_headers() ou getenv('SUBDOMAIN')
+RewriteCond %{HTTP_HOST} ^([a-z0-9-]+)\.(.+)$ [NC]
+RewriteRule ^ - [E=SUBDOMAIN:%1,E=DOMAIN:%2]
+
+# ── Front Controller ──────────────────────────────────────────────────────────
+# Redireciona todas as requisições para index.php
+# Exclui arquivos e pastas físicas que realmente existem (assets, uploads)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.php [QSA,L]
+
+# ── Cabeçalhos de Segurança ───────────────────────────────────────────────────
+<IfModule mod_headers.c>
+    # Evita clickjacking
+    Header always set X-Frame-Options "SAMEORIGIN"
+
+    # Evita MIME sniffing
+    Header always set X-Content-Type-Options "nosniff"
+
+    # Proteção básica XSS (legacy, mas ainda útil)
+    Header always set X-XSS-Protection "1; mode=block"
+
+    # Referrer Policy
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+
+    # Remove header que expõe tecnologia
+    Header unset X-Powered-By
+    Header always unset X-Powered-By
+
+    # Content-Security-Policy (ajustar conforme CDNs e fontes usadas)
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; frame-ancestors 'none';"
+
+    # HSTS — só ative com HTTPS estável (descomente em produção)
+    # Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+</IfModule>
+
+# ── Cache de Assets Estáticos ─────────────────────────────────────────────────
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/css             "access plus 1 year"
+    ExpiresByType application/javascript "access plus 1 year"
+    ExpiresByType image/png            "access plus 1 year"
+    ExpiresByType image/jpeg           "access plus 1 year"
+    ExpiresByType image/svg+xml        "access plus 1 year"
+    ExpiresByType font/woff2           "access plus 1 year"
+</IfModule>
+
+# ── Compressão Gzip ───────────────────────────────────────────────────────────
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/css application/javascript application/json
+</IfModule>
