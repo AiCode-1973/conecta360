@@ -8,11 +8,15 @@ require_once dirname(__DIR__) . '/config/app.php';
 
 // ── Sessão segura ─────────────────────────────────────────────────────────────
 if (session_status() === PHP_SESSION_NONE) {
+    $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+               || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https'
+               || ($_SERVER['SERVER_PORT'] ?? '') === '443';
+
     ini_set('session.use_strict_mode', '1');
     ini_set('session.use_only_cookies', '1');
     ini_set('session.cookie_httponly', '1');
-    ini_set('session.cookie_secure', '1');
-    ini_set('session.cookie_samesite', 'Strict');
+    ini_set('session.cookie_secure', $isHttps ? '1' : '0');
+    ini_set('session.cookie_samesite', 'Lax');
     ini_set('session.name', 'c360sess');
     ini_set('session.gc_maxlifetime', (string)env('SESSION_LIFETIME', '7200'));
     session_start();

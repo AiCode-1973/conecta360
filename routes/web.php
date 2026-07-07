@@ -125,38 +125,3 @@ if ($uri === '/dashboard' && $method === 'GET') {
 http_response_code(404);
 require BASE_PATH . '/views/errors/404.php';
 exit;
-use Conecta360\Modules\Board\BoardController;
-
-$router = new Router();
-
-// ── Rotas públicas (sem autenticação) ─────────────────────────────────────────
-$router->get( '/login',           [AuthController::class, 'showLogin']);
-$router->post('/login',           [AuthController::class, 'login'],          [CsrfMiddleware::class]);
-$router->post('/logout',          [AuthController::class, 'logout'],         [AuthMiddleware::class, CsrfMiddleware::class]);
-$router->get( '/register',        [AuthController::class, 'showRegister']);
-$router->post('/register',        [AuthController::class, 'register'],       [CsrfMiddleware::class]);
-$router->get( '/forgot-password', [AuthController::class, 'showForgotPassword']);
-$router->post('/forgot-password', [AuthController::class, 'forgotPassword'], [CsrfMiddleware::class]);
-$router->get( '/reset-password',  [AuthController::class, 'showResetPassword']);
-$router->post('/reset-password',  [AuthController::class, 'resetPassword'],  [CsrfMiddleware::class]);
-$router->get( '/verify-email',    [AuthController::class, 'verifyEmail']);
-
-// ── Rotas protegidas (requerem autenticação) ───────────────────────────────────
-$router->group('', [AuthMiddleware::class], function (Router $r): void {
-
-    // Dashboard
-    $r->get('/',          [DashboardController::class, 'index']);
-    $r->get('/dashboard', [DashboardController::class, 'index']);
-
-    // Boards
-    $r->get( '/boards',         [BoardController::class, 'index']);
-    $r->get( '/boards/{id}',    [BoardController::class, 'show']);
-    $r->post('/boards',         [BoardController::class, 'store'],   [CsrfMiddleware::class, new PermissionMiddleware('boards.create')]);
-    $r->put( '/boards/{id}',    [BoardController::class, 'update'],  [CsrfMiddleware::class, new PermissionMiddleware('boards.edit')]);
-    $r->delete('/boards/{id}',  [BoardController::class, 'destroy'], [CsrfMiddleware::class, new PermissionMiddleware('boards.delete')]);
-
-    // ... demais módulos seguem o mesmo padrão
-
-});
-
-return $router;

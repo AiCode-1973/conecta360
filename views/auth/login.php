@@ -126,7 +126,7 @@
             </div>
         <?php endif ?>
 
-        <form method="POST" action="<?= htmlspecialchars(env('APP_URL') . '/login') ?>" novalidate>
+        <form method="POST" action="/login" novalidate>
             <?= csrf_field() ?>
 
             <div class="form-group">
