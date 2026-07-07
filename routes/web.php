@@ -121,6 +121,249 @@ if ($uri === '/dashboard' && $method === 'GET') {
     exit;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// BOARDS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function board_repo(): BoardRepository {
+    static $r = null;
+    if (!$r) {
+        require_once BASE_PATH . '/src/Modules/Board/BoardRepository.php';
+        $r = new BoardRepository(pdo_master());
+    }
+    return $r;
+}
+function group_repo(): GroupRepository {
+    static $r = null;
+    if (!$r) {
+        require_once BASE_PATH . '/src/Modules/Board/GroupRepository.php';
+        $r = new GroupRepository(pdo_master());
+    }
+    return $r;
+}
+function item_repo(): ItemRepository {
+    static $r = null;
+    if (!$r) {
+        require_once BASE_PATH . '/src/Modules/Board/ItemRepository.php';
+        $r = new ItemRepository(pdo_master());
+    }
+    return $r;
+}
+
+function json_response(array $data, int $code = 200): never {
+    http_response_code($code);
+    header('Content-Type: application/json');
+    echo json_encode($data);
+    exit;
+}
+
+// GET /boards
+if ($uri === '/boards' && $method === 'GET') {
+    require_auth();
+    require BASE_PATH . '/views/boards/index.php';
+    exit;
+}
+
+// GET /boards/create
+if ($uri === '/boards/create' && $method === 'GET') {
+    require_auth();
+    require BASE_PATH . '/views/boards/create.php';
+    exit;
+}
+
+// POST /boards/create
+if ($uri === '/boards/create' && $method === 'POST') {
+    require_auth();
+    if (!csrf_verify()) { flash_set('error', 'Token inválido.'); redirect('/boards/create'); }
+
+    $name        = trim($_POST['name'] ?? '');
+    $workspaceId = (int)($_POST['workspace_id'] ?? 0);
+    $description = trim($_POST['description'] ?? '');
+    $visibility  = in_array($_POST['visibility'] ?? '', ['public','private','shared'], true)
+                   ? $_POST['visibility'] : 'public';
+    $color       = preg_match('/^#[0-9a-fA-F]{6}$/', $_POST['color'] ?? '') ? $_POST['color'] : '#0073ea';
+    $icon        = trim($_POST['icon'] ?? '📋');
+
+    if (strlen($name) < 2 || strlen($name) > 120) {
+        flash_set('error', 'Nome deve ter entre 2 e 120 caracteres.');
+        redirect('/boards/create');
+    }
+    if ($workspaceId < 1) {
+        flash_set('error', 'Selecione um workspace.');
+        redirect('/boards/create');
+    }
+
+    $repo    = board_repo();
+    $boardId = $repo->create([
+        'workspace_id' => $workspaceId,
+        'name'         => $name,
+        'description'  => $description,
+        'visibility'   => $visibility,
+        'color'        => $color,
+        'icon'         => $icon,
+        'created_by'   => $_SESSION['user_id'],
+    ]);
+    $repo->addMember($boardId, $_SESSION['user_id'], 'owner');
+
+    // Colunas padrão
+    $statusOptions = json_encode(['options' => [
+        ['slug' => 'not_started', 'label' => 'Não Iniciado', 'color' => '#c4c4c4'],
+        ['slug' => 'in_progress', 'label' => 'Em Andamento', 'color' => '#fdab3d'],
+        ['slug' => 'done',        'label' => 'Concluído',    'color' => '#00c875'],
+        ['slug' => 'stuck',       'label' => 'Travado',      'color' => '#e2445c'],
+    ]]);
+    $repo->createColumn(['board_id' => $boardId, 'name' => 'Status',      'type' => 'status', 'settings' => $statusOptions]);
+    $repo->createColumn(['board_id' => $boardId, 'name' => 'Responsável', 'type' => 'person', 'settings' => '{}']);
+    $repo->createColumn(['board_id' => $boardId, 'name' => 'Data Limite', 'type' => 'date',   'settings' => '{}']);
+
+    // Grupo padrão
+    group_repo()->create($boardId, 'Principal');
+
+    flash_set('success', 'Board criado com sucesso!');
+    redirect('/boards/' . $boardId);
+}
+
+// Workspace create inline
+if ($uri === '/workspaces/create' && $method === 'POST') {
+    require_auth();
+    if (!csrf_verify()) { json_response(['error' => 'Token inválido'], 403); }
+    $name = trim($_POST['name'] ?? '');
+    if (strlen($name) < 2) { flash_set('error', 'Nome inválido.'); redirect('/boards/create'); }
+    $stmt = pdo_master()->prepare(
+        'INSERT INTO workspaces (name, created_by) VALUES (?, ?)'
+    );
+    $stmt->execute([$name, $_SESSION['user_id']]);
+    $id = (int)pdo_master()->lastInsertId();
+    if (!empty($_SERVER['HTTP_X_REQUESTED_WITH'])) {
+        json_response(['id' => $id, 'name' => $name]);
+    }
+    redirect('/boards/create');
+}
+
+// GET /boards/{id}
+if (preg_match('#^/boards/(\d+)$#', $uri, $m) && $method === 'GET') {
+    require_auth();
+    $boardId = (int)$m[1];
+    require BASE_PATH . '/views/boards/show.php';
+    exit;
+}
+
+// POST /boards/{id}/groups/create
+if (preg_match('#^/boards/(\d+)/groups/create$#', $uri, $m) && $method === 'POST') {
+    require_auth();
+    if (!csrf_verify()) { json_response(['error' => 'Token inválido'], 403); }
+    $boardId = (int)$m[1];
+    $name    = trim($_POST['name'] ?? 'Novo Grupo');
+    $color   = preg_match('/^#[0-9a-fA-F]{6}$/', $_POST['color'] ?? '') ? $_POST['color'] : '#579bfc';
+    $id      = group_repo()->create($boardId, $name ?: 'Novo Grupo', $color);
+    json_response(['id' => $id, 'name' => $name, 'color' => $color]);
+}
+
+// POST /groups/{id}/update
+if (preg_match('#^/groups/(\d+)/update$#', $uri, $m) && $method === 'POST') {
+    require_auth();
+    if (!csrf_verify()) { json_response(['error' => 'Token inválido'], 403); }
+    group_repo()->update((int)$m[1], ['name' => $_POST['name'] ?? null, 'color' => $_POST['color'] ?? null]);
+    json_response(['ok' => true]);
+}
+
+// POST /groups/{id}/delete
+if (preg_match('#^/groups/(\d+)/delete$#', $uri, $m) && $method === 'POST') {
+    require_auth();
+    if (!csrf_verify()) { json_response(['error' => 'Token inválido'], 403); }
+    group_repo()->delete((int)$m[1]);
+    json_response(['ok' => true]);
+}
+
+// POST /boards/{id}/items/create
+if (preg_match('#^/boards/(\d+)/items/create$#', $uri, $m) && $method === 'POST') {
+    require_auth();
+    if (!csrf_verify()) { json_response(['error' => 'Token inválido'], 403); }
+    $boardId = (int)$m[1];
+    $groupId = (int)($_POST['group_id'] ?? 0);
+    $name    = trim($_POST['name'] ?? '');
+    if (!$name || !$groupId) { json_response(['error' => 'Dados inválidos'], 422); }
+    $id = item_repo()->create($boardId, $groupId, $name, $_SESSION['user_id']);
+    json_response(['id' => $id, 'name' => $name, 'group_id' => $groupId]);
+}
+
+// POST /items/{id}/update  (nome)
+if (preg_match('#^/items/(\d+)/update$#', $uri, $m) && $method === 'POST') {
+    require_auth();
+    if (!csrf_verify()) { json_response(['error' => 'Token inválido'], 403); }
+    $name = trim($_POST['name'] ?? '');
+    if (!$name) { json_response(['error' => 'Nome inválido'], 422); }
+    item_repo()->updateName((int)$m[1], $name);
+    json_response(['ok' => true]);
+}
+
+// POST /items/{id}/values  (valor de coluna dinâmica)
+if (preg_match('#^/items/(\d+)/values$#', $uri, $m) && $method === 'POST') {
+    require_auth();
+    if (!csrf_verify()) { json_response(['error' => 'Token inválido'], 403); }
+    $itemId   = (int)$m[1];
+    $colId    = (int)($_POST['column_id'] ?? 0);
+    $valText  = $_POST['value_text']   ?? null;
+    $valNum   = isset($_POST['value_number'])  ? (float)$_POST['value_number']  : null;
+    $valDate  = $_POST['value_date']   ?? null;
+    $valJson  = $_POST['value_json']   ?? null;
+    if (!$colId) { json_response(['error' => 'column_id obrigatório'], 422); }
+    item_repo()->upsertValue($itemId, $colId, [
+        'value_text'   => $valText,
+        'value_number' => $valNum,
+        'value_date'   => $valDate ?: null,
+        'value_json'   => $valJson,
+    ]);
+    json_response(['ok' => true]);
+}
+
+// POST /items/{id}/move
+if (preg_match('#^/items/(\d+)/move$#', $uri, $m) && $method === 'POST') {
+    require_auth();
+    if (!csrf_verify()) { json_response(['error' => 'Token inválido'], 403); }
+    $groupId = (int)($_POST['group_id'] ?? 0);
+    if (!$groupId) { json_response(['error' => 'group_id obrigatório'], 422); }
+    item_repo()->move((int)$m[1], $groupId);
+    json_response(['ok' => true]);
+}
+
+// POST /items/{id}/archive
+if (preg_match('#^/items/(\d+)/archive$#', $uri, $m) && $method === 'POST') {
+    require_auth();
+    if (!csrf_verify()) { json_response(['error' => 'Token inválido'], 403); }
+    item_repo()->archive((int)$m[1]);
+    json_response(['ok' => true]);
+}
+
+// POST /items/{id}/delete
+if (preg_match('#^/items/(\d+)/delete$#', $uri, $m) && $method === 'POST') {
+    require_auth();
+    if (!csrf_verify()) { json_response(['error' => 'Token inválido'], 403); }
+    item_repo()->delete((int)$m[1]);
+    json_response(['ok' => true]);
+}
+
+// POST /boards/{id}/columns/create
+if (preg_match('#^/boards/(\d+)/columns/create$#', $uri, $m) && $method === 'POST') {
+    require_auth();
+    if (!csrf_verify()) { json_response(['error' => 'Token inválido'], 403); }
+    $boardId  = (int)$m[1];
+    $colName  = trim($_POST['name'] ?? '');
+    $colType  = $_POST['type'] ?? 'text';
+    if (!$colName) { json_response(['error' => 'Nome obrigatório'], 422); }
+    $allowedTypes = ['text','long_text','number','date','status','person','checkbox','dropdown','email','phone','link','rating','file'];
+    if (!in_array($colType, $allowedTypes, true)) { $colType = 'text'; }
+    $settings = '{}';
+    if ($colType === 'status') {
+        $settings = json_encode(['options' => [
+            ['slug' => 'opt1', 'label' => 'Opção 1', 'color' => '#579bfc'],
+            ['slug' => 'opt2', 'label' => 'Opção 2', 'color' => '#fdab3d'],
+        ]]);
+    }
+    $id = board_repo()->createColumn(['board_id' => $boardId, 'name' => $colName, 'type' => $colType, 'settings' => $settings]);
+    json_response(['id' => $id, 'name' => $colName, 'type' => $colType]);
+}
+
 // 404
 http_response_code(404);
 require BASE_PATH . '/views/errors/404.php';
