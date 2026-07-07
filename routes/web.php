@@ -408,6 +408,53 @@ if ($uri === '/users/create' && $method === 'POST') {
     redirect('/users');
 }
 
+// POST /users/{id}/update
+if (preg_match('#^/users/(\d+)/update$#', $uri, $m) && $method === 'POST') {
+    require_auth();
+    if (!csrf_verify()) { json_response(['error' => 'Token inválido'], 403); }
+    $uid  = (int)$m[1];
+    $name  = trim($_POST['name'] ?? '');
+    $email = strtolower(trim(filter_input(INPUT_POST, 'email', FILTER_SANITIZE_EMAIL) ?? ''));
+    $jobTitle = trim($_POST['job_title'] ?? '');
+    $department = trim($_POST['department'] ?? '');
+    $status = in_array($_POST['status'] ?? '', ['active','invited','inactive','blocked'], true) ? $_POST['status'] : null;
+    $newPass = $_POST['new_password'] ?? '';
+
+    if (strlen($name) < 2) { json_response(['error' => 'Nome deve ter ao menos 2 caracteres.'], 422); }
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) { json_response(['error' => 'E-mail inválido.'], 422); }
+
+    try {
+        $fields = ['name = ?', 'email = ?', 'job_title = ?', 'department = ?', 'updated_at = NOW()'];
+        $params = [$name, $email, $jobTitle ?: null, $department ?: null];
+
+        if ($status && !($uid === (int)$_SESSION['user_id'] && $status !== 'active')) {
+            $fields[] = 'status = ?';
+            $params[]  = $status;
+        }
+        if ($newPass !== '') {
+            if (strlen($newPass) < 6) { json_response(['error' => 'Nova senha deve ter ao menos 6 caracteres.'], 422); }
+            $fields[] = 'password = ?';
+            $params[]  = password_hash($newPass, PASSWORD_BCRYPT, ['cost' => 12]);
+        }
+
+        $params[] = $uid;
+        pdo_master()->prepare('UPDATE users SET ' . implode(', ', $fields) . ' WHERE id = ? AND deleted_at IS NULL')
+                    ->execute($params);
+
+        // Retorna dados atualizados para o JS atualizar a linha
+        $row = pdo_master()->prepare('SELECT id, name, email, status, job_title FROM users WHERE id = ? LIMIT 1');
+        $row->execute([$uid]);
+        json_response(['ok' => true, 'user' => $row->fetch()]);
+    } catch (Exception $e) {
+        if (str_contains($e->getMessage(), 'Duplicate')) {
+            json_response(['error' => 'Este e-mail já está em uso por outro usuário.'], 422);
+        } else {
+            error_log('[users.update] ' . $e->getMessage());
+            json_response(['error' => 'Erro ao salvar.'], 500);
+        }
+    }
+}
+
 // POST /users/{id}/toggle-status
 if (preg_match('#^/users/(\d+)/toggle-status$#', $uri, $m) && $method === 'POST') {
     require_auth();

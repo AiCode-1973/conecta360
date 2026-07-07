@@ -262,11 +262,16 @@ small.hint{color:var(--muted);font-size:.72rem;display:block;margin-top:.2rem}
                     </td>
                     <td>
                         <div class="actions">
+                            <button class="btn btn-ghost btn-sm"
+                                    onclick="openEdit(<?= $u['id'] ?>, <?= htmlspecialchars(json_encode($u)) ?>)"
+                                    title="Editar">
+                                ✏️ Editar
+                            </button>
                             <?php if ((int)$u['id'] !== $me): ?>
                             <button class="btn btn-ghost btn-sm"
                                     onclick="toggleStatus(<?= $u['id'] ?>, '<?= htmlspecialchars($u['status']) ?>', this)"
                                     title="<?= $u['status'] === 'active' ? 'Desativar' : 'Ativar' ?>">
-                                <?= $u['status'] === 'active' ? '⛔ Desativar' : '✅ Ativar' ?>
+                                <?= $u['status'] === 'active' ? '⛔' : '✅' ?>
                             </button>
                             <button class="btn btn-ghost btn-sm"
                                     onclick="deleteUser(<?= $u['id'] ?>, this)"
@@ -274,8 +279,6 @@ small.hint{color:var(--muted);font-size:.72rem;display:block;margin-top:.2rem}
                                     title="Excluir">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M9 6V4h6v2"/></svg>
                             </button>
-                            <?php else: ?>
-                            <span style="font-size:.75rem;color:var(--muted)">—</span>
                             <?php endif ?>
                         </div>
                     </td>
@@ -284,6 +287,51 @@ small.hint{color:var(--muted);font-size:.72rem;display:block;margin-top:.2rem}
                 </tbody>
             </table>
             <?php endif ?>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Editar Usuário -->
+<div class="modal-overlay" id="editModal">
+    <div class="modal" style="width:500px">
+        <h3>✏️ Editar Usuário</h3>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Nome completo *</label>
+                <input type="text" id="edit_name" placeholder="Nome" maxlength="200">
+            </div>
+            <div class="form-group">
+                <label>Status</label>
+                <select id="edit_status">
+                    <option value="active">✅ Ativo</option>
+                    <option value="invited">📧 Convidado</option>
+                    <option value="inactive">⛔ Inativo</option>
+                    <option value="blocked">🚫 Bloqueado</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>E-mail *</label>
+            <input type="email" id="edit_email" placeholder="email@hospital.com">
+        </div>
+        <div class="form-row">
+            <div class="form-group" style="margin-bottom:0">
+                <label>Cargo</label>
+                <input type="text" id="edit_job_title" placeholder="Ex: Enfermeiro Chefe">
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+                <label>Departamento</label>
+                <input type="text" id="edit_department" placeholder="Ex: UTI">
+            </div>
+        </div>
+        <div class="form-group" style="margin-top:1rem">
+            <label>Nova Senha <span style="color:var(--muted);font-weight:400">(deixe em branco para não alterar)</span></label>
+            <input type="password" id="edit_password" placeholder="Mínimo 6 caracteres" minlength="6">
+        </div>
+        <div id="editError" style="display:none;color:var(--danger);font-size:.82rem;margin-top:.5rem"></div>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-ghost" onclick="document.getElementById('editModal').classList.remove('show')">Cancelar</button>
+            <button type="button" class="btn btn-primary" id="editSaveBtn" onclick="saveEdit()">Salvar Alterações</button>
         </div>
     </div>
 </div>
@@ -327,14 +375,63 @@ small.hint{color:var(--muted);font-size:.72rem;display:block;margin-top:.2rem}
 
 <script>
 const CSRF = '<?= csrf_token() ?>';
+let editUserId = null;
 
-async function api(url) {
+async function api(url, extra = {}) {
+    const body = new URLSearchParams({ _csrf: CSRF, ...extra });
     const r = await fetch(url, {
         method: 'POST',
         headers: {'Content-Type':'application/x-www-form-urlencoded','X-Requested-With':'XMLHttpRequest'},
-        body: '_csrf=' + encodeURIComponent(CSRF)
+        body
     });
     return r.json();
+}
+
+function openEdit(id, user) {
+    editUserId = id;
+    document.getElementById('edit_name').value       = user.name       || '';
+    document.getElementById('edit_email').value      = user.email      || '';
+    document.getElementById('edit_job_title').value  = user.job_title  || '';
+    document.getElementById('edit_department').value = user.department || '';
+    document.getElementById('edit_status').value     = user.status     || 'active';
+    document.getElementById('edit_password').value   = '';
+    document.getElementById('editError').style.display = 'none';
+    document.getElementById('editModal').classList.add('show');
+    document.getElementById('edit_name').focus();
+}
+
+async function saveEdit() {
+    const btn = document.getElementById('editSaveBtn');
+    btn.disabled = true;
+    btn.textContent = 'Salvando...';
+    const d = await api(`/users/${editUserId}/update`, {
+        name:         document.getElementById('edit_name').value,
+        email:        document.getElementById('edit_email').value,
+        job_title:    document.getElementById('edit_job_title').value,
+        department:   document.getElementById('edit_department').value,
+        status:       document.getElementById('edit_status').value,
+        new_password: document.getElementById('edit_password').value,
+    });
+    btn.disabled = false;
+    btn.textContent = 'Salvar Alterações';
+    if (d.error) {
+        const errEl = document.getElementById('editError');
+        errEl.textContent = d.error;
+        errEl.style.display = 'block';
+        return;
+    }
+    // Atualiza a linha na tabela sem recarregar
+    const u = d.user;
+    const row = document.getElementById('user-row-' + editUserId);
+    if (row) {
+        row.querySelector('.user-name').childNodes[0].textContent = u.name;
+        row.querySelector('.user-email').textContent = u.email;
+        const td = row.querySelectorAll('td')[2]; // coluna Status
+        td.innerHTML = `<span class="badge badge-${u.status}">${{active:'Ativo',inactive:'Inativo',invited:'Convidado',blocked:'Bloqueado'}[u.status]||u.status}</span>`;
+        const tdJob = row.querySelectorAll('td')[1];
+        tdJob.textContent = u.job_title || '—';
+    }
+    document.getElementById('editModal').classList.remove('show');
 }
 
 async function toggleStatus(id, currentStatus, btn) {
