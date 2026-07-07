@@ -193,6 +193,7 @@ if ($uri === '/boards/create' && $method === 'POST') {
         redirect('/boards/create');
     }
 
+    $currentUserId = (int)$_SESSION['user_id'];
     $repo    = board_repo();
     try {
         $boardId = $repo->create([
@@ -202,10 +203,10 @@ if ($uri === '/boards/create' && $method === 'POST') {
             'visibility'   => $visibility,
             'color'        => $color,
             'icon'         => $icon,
-            'created_by'   => $_SESSION['user_id'],
+            'created_by'   => $currentUserId,
         ]);
-        $repo->addMember($boardId, $_SESSION['user_id'], 'owner');
-        $repo->ensureWorkspaceMember($workspaceId, $_SESSION['user_id'], 'owner');
+        $repo->addMember($boardId, $currentUserId, 'owner');
+        $repo->ensureWorkspaceMember($workspaceId, $currentUserId, 'owner');
 
         // Colunas padrão
         $statusOptions = json_encode(['options' => [
@@ -221,7 +222,7 @@ if ($uri === '/boards/create' && $method === 'POST') {
         // Grupo padrão
         group_repo()->create($boardId, 'Principal');
 
-    } catch (Exception $e) {
+    } catch (\Throwable $e) {
         error_log('[board.create] ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
         flash_set('error', APP_DEBUG ? $e->getMessage() : 'Erro ao criar board. Tente novamente.');
         redirect('/boards/create');
@@ -240,7 +241,7 @@ if ($uri === '/workspaces/create' && $method === 'POST') {
     $stmt = pdo_master()->prepare(
         'INSERT INTO workspaces (name, created_by) VALUES (?, ?)'
     );
-    $stmt->execute([$name, $_SESSION['user_id']]);
+    $stmt->execute([$name, (int)$_SESSION['user_id']]);
     $id = (int)pdo_master()->lastInsertId();
     if (!empty($_SERVER['HTTP_X_REQUESTED_WITH'])) {
         json_response(['id' => $id, 'name' => $name]);
@@ -291,7 +292,7 @@ if (preg_match('#^/boards/(\d+)/items/create$#', $uri, $m) && $method === 'POST'
     $groupId = (int)($_POST['group_id'] ?? 0);
     $name    = trim($_POST['name'] ?? '');
     if (!$name || !$groupId) { json_response(['error' => 'Dados inválidos'], 422); }
-    $id = item_repo()->create($boardId, $groupId, $name, $_SESSION['user_id']);
+    $id = item_repo()->create($boardId, $groupId, $name, (int)$_SESSION['user_id']);
     json_response(['id' => $id, 'name' => $name, 'group_id' => $groupId]);
 }
 
