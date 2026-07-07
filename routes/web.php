@@ -110,7 +110,7 @@ if ($uri === '/login' && $method === 'POST') {
 // GET /logout
 if ($uri === '/logout') {
     $_SESSION = []; session_destroy();
-    setcookie(session_name(), '', time() - 3600, '/');
+    setcookie(session_name(), '', time() - 3600, '/', '', true, true);
     redirect('/login');
 }
 

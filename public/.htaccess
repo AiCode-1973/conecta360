@@ -20,9 +20,9 @@ RewriteRule ^(bootstrap|core|database|modules|middleware|helpers|services|config
 # ── Rewrite Engine ────────────────────────────────────────────────────────────
 RewriteEngine On
 
-# Força HTTPS em produção (descomente quando o SSL estiver configurado)
-# RewriteCond %{HTTPS} off
-# RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+# Força HTTPS em produção
+RewriteCond %{HTTPS} off
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
 
 # ── Captura do Subdomínio ─────────────────────────────────────────────────────
 # Extrai o primeiro segmento do host e injeta como variável de ambiente
