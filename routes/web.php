@@ -125,24 +125,6 @@ if ($uri === '/dashboard' && $method === 'GET') {
 http_response_code(404);
 require BASE_PATH . '/views/errors/404.php';
 exit;
-
-// ─── código antigo (mantido como referência, não executado) ──────────────────
-if (false) {
-// CONVENÇÕES:
-//  - Rotas públicas: sem middleware de autenticação
-//  - Rotas protegidas: [AuthMiddleware::class] obrigatório
- *  - Rotas com permissão: [AuthMiddleware::class, new PermissionMiddleware('slug')]
- *  - Todos os POSTs: [CsrfMiddleware::class] obrigatório
- */
-
-declare(strict_types=1);
-
-use Conecta360\Core\Router;
-use Conecta360\Middleware\AuthMiddleware;
-use Conecta360\Middleware\CsrfMiddleware;
-use Conecta360\Middleware\PermissionMiddleware;
-use Conecta360\Modules\Auth\AuthController;
-use Conecta360\Modules\Dashboard\DashboardController;
 use Conecta360\Modules\Board\BoardController;
 
 $router = new Router();
