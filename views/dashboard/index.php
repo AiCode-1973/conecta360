@@ -21,7 +21,11 @@ try {
     $stmtNotif->execute([$user['id']]);
     $unreadNotifs = (int)$stmtNotif->fetchColumn();
 
-    $stmtBoards = $pdo->query('SELECT COUNT(*) FROM boards WHERE deleted_at IS NULL');
+    $stmtBoards = $pdo->prepare(
+        'SELECT COUNT(*) FROM boards b WHERE b.deleted_at IS NULL
+         AND (b.created_by = ? OR EXISTS (SELECT 1 FROM board_members bm WHERE bm.board_id = b.id AND bm.user_id = ?))'
+    );
+    $stmtBoards->execute([$user['id'], $user['id']]);
     $totalBoards = (int)$stmtBoards->fetchColumn();
 
     $stmtUsers = $pdo->query('SELECT COUNT(*) FROM users WHERE status = "active" AND deleted_at IS NULL');
@@ -40,9 +44,10 @@ try {
                 (SELECT COUNT(*) FROM items i WHERE i.board_id = b.id AND i.deleted_at IS NULL) as item_count
          FROM boards b
          WHERE b.deleted_at IS NULL
+           AND (b.created_by = ? OR EXISTS (SELECT 1 FROM board_members bm WHERE bm.board_id = b.id AND bm.user_id = ?))
          ORDER BY b.updated_at DESC LIMIT 6'
     );
-    $stmtMyBoards->execute();
+    $stmtMyBoards->execute([$user['id'], $user['id']]);
     $myBoards = $stmtMyBoards->fetchAll(PDO::FETCH_ASSOC);
 
 } catch (Exception $e) {
