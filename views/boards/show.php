@@ -14,12 +14,9 @@ if (!$board) { http_response_code(404); require BASE_PATH . '/views/errors/404.p
 $userId   = (int)$_SESSION['user_id'];
 $userRole = $boardRepo->getMemberRole($boardId, $userId);
 $isCreator = (int)$board['created_by'] === $userId;
-$isMemberOfWorkspace = $boardRepo->isWorkspaceMember((int)$board['workspace_id'], $userId);
 
-// Permissão: precisa ser membro do board, criador, ou membro do workspace (para boards públicos)
-$canAccess = $userRole
-    || $isCreator
-    || ($board['visibility'] === 'public' && $isMemberOfWorkspace);
+// Permissão: precisa ser membro direto do board ou criador
+$canAccess = $userRole || $isCreator;
 
 if (!$canAccess) {
     flash_set('error', 'Sem permissão para acessar este board.');

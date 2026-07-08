@@ -14,21 +14,16 @@ class BoardRepository
              INNER JOIN workspaces w ON w.id = b.workspace_id
              WHERE b.deleted_at IS NULL
                AND (
-                   -- Membro direto do board (qualquer visibilidade)
+                   -- Membro direto do board
                    EXISTS (SELECT 1 FROM board_members bm WHERE bm.board_id = b.id AND bm.user_id = :uid1)
                    OR (
-                       -- Board público: só visível para membros do workspace
-                       b.visibility = \'public\'
-                       AND EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id = b.workspace_id AND wm.user_id = :uid2)
-                   )
-                   OR (
                        -- Criador do board sempre vê
-                       b.created_by = :uid3
+                       b.created_by = :uid2
                    )
                )
              ORDER BY w.name, b.order_index, b.name'
         );
-        $stmt->execute([':uid1' => $userId, ':uid2' => $userId, ':uid3' => $userId]);
+        $stmt->execute([':uid1' => $userId, ':uid2' => $userId]);
         return $stmt->fetchAll();
     }
 
